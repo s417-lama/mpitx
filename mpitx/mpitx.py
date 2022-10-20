@@ -263,6 +263,7 @@ def launch_reverse_shell(host, port, token, commands):
                 if ts:
                     set_termsize(fd, ts)
                 else:
+                    os.close(fd)
                     return
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -322,7 +323,8 @@ def main():
         def launch_mpiexec(port, token):
             nonlocal mpiexec_process
             args = dict(commands=commands, port=port, token=token)
-            mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + [this_cmd, child_subcmd, serialize(args)])
+            mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + [this_cmd, child_subcmd, serialize(args)],
+                                               start_new_session=True)
 
         child_conns = establish_connection_on_parent(launch_mpiexec)
 
@@ -347,7 +349,9 @@ def main():
         try:
             mpiexec_process.wait()
         except KeyboardInterrupt:
-            mpiexec_process.terminate()
+            pgid = os.getpgid(mpiexec_process.pid)
+            os.killpg(pgid, signal.SIGINT)
+            mpiexec_process.wait()
             print("Interrupted.")
 
         for conn in child_conns.values():
