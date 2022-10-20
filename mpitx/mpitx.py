@@ -15,6 +15,7 @@ import signal
 import tty
 import pty
 import threading
+import time
 
 mpiexec_cmd = "mpiexec"
 tmux_cmd = "tmux"
@@ -185,6 +186,39 @@ def proxy_fd(in_fds, out_fds):
                 else:
                     return
 
+def get_termsize(fd):
+    ts = array.array("h", [0] * 4)
+    fcntl.ioctl(fd, termios.TIOCGWINSZ, ts, 1)
+    return ts
+
+def set_termsize(fd, ts):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, ts, 0)
+
+def get_stable_termsize(fd):
+    prev_ts = get_termsize(fd)
+    while True:
+        time.sleep(0.2)
+        ts = get_termsize(fd)
+        if ts == prev_ts:
+            return ts
+        else:
+            prev_ts = ts
+
+def send_termsize(s, ts):
+    s.sendall(ts.tobytes())
+
+def recv_termsize(s):
+    ts = array.array("h")
+    try:
+        data = recv_exact(s, len(array.array("h", [0] * 4).tobytes()))
+    except:
+        data = b""
+    if data:
+        ts.frombytes(data)
+        return ts
+    else:
+        return None
+
 def wait_on_tmux_pane(on_listen_hook):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -195,12 +229,12 @@ def wait_on_tmux_pane(on_listen_hook):
         on_listen_hook(port, token)
 
         with accept_with_token(s, token) as conn1:
+            send_termsize(conn1, get_stable_termsize(sys.stdin.fileno()))
+
             with accept_with_token(s, token) as conn2:
                 def send_win_size():
                     nonlocal conn2
-                    buf = array.array("h", [0] * 4)
-                    fcntl.ioctl(sys.stdin.fileno(), termios.TIOCGWINSZ, buf, 1)
-                    conn2.sendall(buf.tobytes())
+                    send_termsize(conn2, get_termsize(sys.stdin.fileno()))
 
                 signal.signal(signal.SIGWINCH, lambda signum, frame: send_win_size())
                 send_win_size()
@@ -223,29 +257,28 @@ def launch_reverse_shell(host, port, token, commands):
     def watch_window_size(fd):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, port))
-            s.send(token.encode())
+            s.sendall(token.encode())
             while True:
-                buf = array.array("h")
-                try:
-                    data = recv_exact(s, len(array.array("h", [0] * 4).tobytes()))
-                except:
-                    data = b""
-                if data:
-                    buf.frombytes(data)
+                ts = recv_termsize(s)
+                if ts:
+                    set_termsize(fd, ts)
                 else:
                     return
-                fcntl.ioctl(fd, termios.TIOCSWINSZ, buf, 0)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((host, port))
-        s.send(token.encode())
+        s.sendall(token.encode())
+
+        ts = recv_termsize(s)
 
         pid, fd = pty.fork()
         if pid == 0:
+            set_termsize(sys.stdin.fileno(), ts)
             os.execlp(commands[0], *commands)
 
         t = threading.Thread(target=watch_window_size, args=(fd,))
         t.start()
+
         proxy_fd([s.fileno(), fd], [fd, s.fileno()])
         os.waitpid(pid, 0)
 
