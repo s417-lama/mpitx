@@ -7,6 +7,14 @@ import base64
 import pickle
 import socket
 import secrets
+import select
+import array
+import fcntl
+import termios
+import signal
+import tty
+import pty
+import threading
 
 mpiexec_cmd = "mpiexec"
 tmux_cmd = "tmux"
@@ -160,7 +168,6 @@ def establish_connection_on_parent(on_listen_hook):
             conn = accept_with_token(s, token)
             mpi_rank = recv_int(conn)
             mpi_size = recv_int(conn)
-            print("{}/{}".format(mpi_rank, mpi_size))
             conns[mpi_rank] = conn
 
         return conns
@@ -173,7 +180,26 @@ def establish_connection_to_parent(host, port, token, rank, size):
     send_int(s, size)
     return s
 
-def establish_connection_on_tmux_pane(on_listen_hook):
+# Reverse shell
+# -----------------------------------------------------------------------------
+
+def proxy_fd(in_fds, out_fds):
+    while True:
+        rlist, _wlist, _xlist = select.select(in_fds, [], [])
+        for in_fd, out_fd in zip(in_fds, out_fds):
+            if in_fd in rlist:
+                try:
+                    data = os.read(in_fd, 1024)
+                except:
+                    data = b""
+                if data:
+                    while data:
+                        n = os.write(out_fd, data)
+                        data = data[n:]
+                else:
+                    return
+
+def wait_on_tmux_pane(on_listen_hook):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("0.0.0.0", 0))
@@ -181,13 +207,61 @@ def establish_connection_on_tmux_pane(on_listen_hook):
         (_, port) = s.getsockname()
         token = secrets.token_hex()
         on_listen_hook(port, token)
-        return accept_with_token(s, token)
 
-def establish_connection_to_tmux(host, port, token):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, port))
-    s.sendall(token.encode())
-    return s
+        with accept_with_token(s, token) as conn1:
+            with accept_with_token(s, token) as conn2:
+                def send_win_size():
+                    nonlocal conn2
+                    buf = array.array("h", [0] * 4)
+                    fcntl.ioctl(sys.stdin.fileno(), termios.TIOCGWINSZ, buf, 1)
+                    conn2.sendall(buf.tobytes())
+
+                signal.signal(signal.SIGWINCH, lambda signum, frame: send_win_size())
+                send_win_size()
+
+                try:
+                    mode = tty.tcgetattr(sys.stdin.fileno())
+                    tty.setraw(sys.stdin.fileno())
+                except:
+                    reset_tty_mode = False
+                else:
+                    reset_tty_mode = True
+
+                try:
+                    proxy_fd([conn1.fileno(), sys.stdin.fileno()], [sys.stdout.fileno(), conn1.fileno()])
+                finally:
+                    if reset_tty_mode:
+                        tty.tcsetattr(sys.stdin.fileno(), tty.TCSAFLUSH, mode)
+
+def launch_reverse_shell(host, port, token, commands):
+    def watch_window_size(fd):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            s.send(token.encode())
+            while True:
+                buf = array.array("h")
+                try:
+                    data = recv_exact(s, len(array.array("h", [0] * 4).tobytes()))
+                except:
+                    data = b""
+                if data:
+                    buf.frombytes(data)
+                else:
+                    return
+                fcntl.ioctl(fd, termios.TIOCSWINSZ, buf, 0)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host, port))
+        s.send(token.encode())
+
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execlp(commands[0], *commands)
+
+        t = threading.Thread(target=watch_window_size, args=(fd,))
+        t.start()
+        proxy_fd([s.fileno(), fd], [fd, s.fileno()])
+        os.waitpid(pid, 0)
 
 # Main
 # -----------------------------------------------------------------------------
@@ -206,11 +280,7 @@ def main():
         with establish_connection_to_parent("127.0.0.1", args["port"], args["token"],
                                             get_mpi_rank(), get_mpi_size()) as parent_conn:
             tmux_args = deserialize(recv_with_size(parent_conn).decode())
-
-            result = subprocess.run(args["commands"], stdout=subprocess.PIPE, encoding="utf-8").stdout.strip()
-
-            with establish_connection_to_tmux("127.0.0.1", tmux_args["port"], tmux_args["token"]) as tmux_conn:
-                send_with_size(tmux_conn, result.encode())
+            launch_reverse_shell("127.0.0.1", tmux_args["port"], tmux_args["token"], args["commands"])
 
     elif sys.argv[1] == tmux_subcmd:
         # Process on each tmux pane
@@ -222,9 +292,7 @@ def main():
                 tmux_args = dict(port=port, token=token)
                 send_with_size(conn, serialize(tmux_args).encode())
 
-        with establish_connection_on_tmux_pane(notify_parent) as tmux_conn:
-            result = recv_with_size(tmux_conn).decode()
-            print(result)
+        wait_on_tmux_pane(notify_parent)
 
     else:
         # Top-level process
