@@ -26,44 +26,30 @@ def show_usage_and_exit():
     print("Usage: mpitx [OPTIONS]... -- [COMMANDS]...")
     print("")
     print("Delimiter '--' is required between MPI options and commands.")
-    print("[OPTIONS]... are passed to mpiexec as-is.")
+    print("Options are passed to mpiexec as-is.")
     exit(1)
 
 def show_error(msg):
     print("\x1b[31m" + "Error: " + msg + "\x1b[39m")
 
 def parse_args(args):
-    np_opts = ["-n", "--n", "-np", "--np", "-c"]
     prog_delim = "--"
+    this_cmd = args[0]
 
-    np = 0
-    options = []
-    commands = []
-    is_command = False
-    for i, arg in enumerate(args):
-        if i == 0:
-            this_cmd = arg
-            continue
-        elif arg in np_opts:
-            np = int(args[i + 1])
-        elif arg == prog_delim:
-            is_command = True
-            continue
-
-        if is_command:
-            commands.append(arg)
-        else:
-            options.append(arg)
-
-    if not is_command:
-        show_error("Please specify commands after '--'.")
+    try:
+        prog_delim_index = args.index(prog_delim)
+    except ValueError:
+        show_error("Delimiter '--' is mandatory for commands.")
         show_usage_and_exit()
+
+    options = args[1:prog_delim_index]
+    commands = args[prog_delim_index + 1:]
 
     if len(commands) == 0:
         show_error("No commands were specified after '--'.")
         show_usage_and_exit()
 
-    return (this_cmd, np, options, commands)
+    return (this_cmd, options, commands)
 
 def serialize(obj):
     return base64.b64encode(pickle.dumps(obj)).decode()
@@ -296,7 +282,7 @@ def main():
 
     else:
         # Top-level process
-        (this_cmd, np, options, commands) = parse_args(sys.argv)
+        (this_cmd, options, commands) = parse_args(sys.argv)
 
         mpiexec_process = None
 
