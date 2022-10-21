@@ -84,6 +84,10 @@ def get_mpi_size():
     show_error("Could not get an MPI size from environment variables.")
     exit(1)
 
+def get_ip_addresses():
+    return subprocess.run(["hostname", "--all-ip-addresses"],
+                          stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip().split()
+
 # Tmux
 # -----------------------------------------------------------------------------
 
@@ -115,6 +119,16 @@ def tmux_kill_pane(pane_id):
 
 # Socket
 # -----------------------------------------------------------------------------
+
+def is_host_connectable(host, port, timeout=0.3):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        try:
+            return s.connect_ex((host, port)) == 0
+        except TimeoutError:
+            return False
+        except socket.gaierror:
+            return False
 
 def recv_exact(s, n):
     n_left = n
@@ -311,10 +325,13 @@ def main():
         # Child process of mpiexec
         args = deserialize(sys.argv[2])
 
-        with establish_connection_to_parent("127.0.0.1", args["port"], args["token"],
-                                            get_mpi_rank(), get_mpi_size()) as parent_conn:
-            tmux_args = deserialize(recv_with_size(parent_conn).decode())
-            launch_reverse_shell("127.0.0.1", tmux_args["port"], tmux_args["token"], args["commands"])
+        for host in args["hosts"]:
+            if is_host_connectable(host, args["port"]):
+                with establish_connection_to_parent(host, args["port"], args["token"],
+                                                    get_mpi_rank(), get_mpi_size()) as parent_conn:
+                    tmux_args = deserialize(recv_with_size(parent_conn).decode())
+                    launch_reverse_shell(host, tmux_args["port"], tmux_args["token"], args["commands"])
+                break
 
     elif sys.argv[1] == tmux_subcmd:
         # Process on each tmux pane
@@ -343,7 +360,8 @@ def main():
 
         def launch_mpiexec(port, token):
             nonlocal mpiexec_process
-            args = dict(commands=commands, port=port, token=token)
+            hosts = ["127.0.0.1"] + get_ip_addresses()
+            args = dict(commands=commands, hosts=hosts, port=port, token=token)
             mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + [this_cmd, child_subcmd, serialize(args)],
                                                start_new_session=True)
 
