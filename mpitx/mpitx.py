@@ -16,6 +16,7 @@ import tty
 import pty
 import threading
 import time
+import uuid
 
 mpiexec_cmd = "mpiexec"
 tmux_cmd = "tmux"
@@ -79,24 +80,30 @@ def get_mpi_size():
 # Tmux
 # -----------------------------------------------------------------------------
 
+def is_inside_tmux():
+    return "TMUX" in os.environ
+
+def tmux_new_session(socket_name, commands):
+    subprocess.run([tmux_cmd, "-L", socket_name, "new-session"] + commands)
+
 def tmux_new_window():
-    return subprocess.run(["tmux", "new-window", "-P", "-F", "#{pane_id} #{window_id} #{session_id}"],
+    return subprocess.run([tmux_cmd, "new-window", "-P", "-F", "#{pane_id} #{window_id} #{session_id}"],
                           stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip().split()
 
 def tmux_set_window_option(window_id, options):
-    subprocess.run(["tmux", "set-window-option", "-t", window_id] + options,
+    subprocess.run([tmux_cmd, "set-window-option", "-t", window_id] + options,
                    stdout=subprocess.DEVNULL, check=True)
 
 def tmux_split_window(window_id, commands):
-    return subprocess.run(["tmux", "split-window", "-P", "-F", "#{pane_id}", "-t", window_id] + commands,
+    return subprocess.run([tmux_cmd, "split-window", "-P", "-F", "#{pane_id}", "-t", window_id] + commands,
                           stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip()
 
 def tmux_select_layout(pane_id, layout):
-    subprocess.run(["tmux", "select-layout", "-t", pane_id, layout],
+    subprocess.run([tmux_cmd, "select-layout", "-t", pane_id, layout],
                    stdout=subprocess.DEVNULL, check=True)
 
 def tmux_kill_pane(pane_id):
-    subprocess.run(["tmux", "kill-pane", "-t", pane_id],
+    subprocess.run([tmux_cmd, "kill-pane", "-t", pane_id],
                    stdout=subprocess.DEVNULL, check=True)
 
 # Socket
@@ -316,6 +323,11 @@ def main():
 
     else:
         # Top-level process
+        if not is_inside_tmux():
+            socket_name = "mpitx." + str(uuid.uuid4())
+            tmux_new_session(socket_name, sys.argv)
+            return
+
         (this_cmd, options, commands) = parse_args(sys.argv)
 
         mpiexec_process = None
