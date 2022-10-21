@@ -85,3 +85,9 @@ Useful tmux shortcuts (`<prefix>` = `Ctrl-b` by default):
 - [Azrael3000/tmpi](https://github.com/Azrael3000/tmpi)
     - `mpitx` was inspired by `tmpi`
     - The main advantage of `mpitx` over `tmpi` is the support for multiple nodes
+
+## License
+
+Copyright (c) 2022 Shumpei Shiina
+
+Released under the MIT License. See [LICENSE](./LICENSE).
