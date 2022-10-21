@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+#
+# Copyright (c) 2022 Shumpei Shiina
+# Released under the MIT License.
+#
+
 import os
 import sys
 import subprocess
