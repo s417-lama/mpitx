@@ -94,7 +94,7 @@ def tmux_new_session(socket_name, commands):
     subprocess.run([tmux_cmd, "-L", socket_name, "new-session"] + commands)
 
 def tmux_new_window():
-    return subprocess.run([tmux_cmd, "new-window", "-P", "-F", "#{pane_id} #{window_id} #{session_id}"],
+    return subprocess.run([tmux_cmd, "new-window", "-P", "-F", "#{pane_id} #{window_id}"],
                           stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip().split()
 
 def tmux_set_window_option(window_id, options):
@@ -349,7 +349,7 @@ def main():
 
         child_conns = establish_connection_on_parent(launch_mpiexec)
 
-        [dummy_pane_id, window_id, session_id] = tmux_new_window()
+        [dummy_pane_id, window_id] = tmux_new_window()
         tmux_set_window_option(window_id, ["synchronize-panes", "on"])
         tmux_set_window_option(window_id, ["remain-on-exit", "on"])
 
