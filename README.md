@@ -16,12 +16,8 @@ We have two install options.
 
 ### 1. Install via `pip`
 
-`setup.py` will install `mpitx` command.
-
 ```sh
-git clone https://github.com/s417-lama/mpitx.git
-cd mpitx/
-pip3 install .
+pip3 install git+https://github.com/s417-lama/mpitx.git
 ```
 
 Check your installation with:
