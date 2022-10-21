@@ -17,6 +17,7 @@ import pty
 import threading
 import time
 import uuid
+import shutil
 
 mpiexec_cmd = "mpiexec"
 tmux_cmd = "tmux"
@@ -52,6 +53,12 @@ def parse_args(args):
         show_usage_and_exit()
 
     return (this_cmd, options, commands)
+
+def check_commands_installed():
+    for cmd in [mpiexec_cmd, tmux_cmd]:
+        if shutil.which(cmd) is None:
+            show_error("Please install '{}' command.".format(cmd))
+            show_usage_and_exit()
 
 def serialize(obj):
     return base64.b64encode(pickle.dumps(obj)).decode()
@@ -323,6 +330,8 @@ def main():
 
     else:
         # Top-level process
+        check_commands_installed()
+
         if not is_inside_tmux():
             socket_name = "mpitx." + str(uuid.uuid4())
             tmux_new_session(socket_name, sys.argv)
