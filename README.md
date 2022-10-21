@@ -2,6 +2,12 @@
 
 Run MPI programs over tmux
 
+![](https://raw.githubusercontent.com/s417-lama/mpitx/images/mpitx_gdb.gif)
+
+With multiple nodes:
+
+![](https://raw.githubusercontent.com/s417-lama/mpitx/images/mpitx_remote.gif)
+
 Features:
 - Interactive shell for each MPI process by spawning a tmux pane for each MPI process
 - Duplicated keyboard input to all MPI processes
