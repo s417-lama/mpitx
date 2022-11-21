@@ -24,8 +24,8 @@ import time
 import uuid
 import shutil
 
-mpiexec_cmd = "mpiexec"
-tmux_cmd = "tmux"
+mpiexec_cmd = os.environ.get("MPITX_MPIEXEC", "mpiexec")
+tmux_cmd = os.environ.get("MPITX_TMUX", "tmux")
 
 # Utils
 # -----------------------------------------------------------------------------

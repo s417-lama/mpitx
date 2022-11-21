@@ -74,6 +74,13 @@ With some MPI implementation-specific options:
 mpitx --mca mpi_show_mca_params 1 -- gdb ./a.out
 ```
 
+## Environment Variables
+
+- `MPITX_MPIEXEC`: custom path to `mpiexec` command
+- `MPITX_TMUX`: custom path to `tmux` command
+
+When these variables are unset, the default `mpiexec` and `tmux` commands are used.
+
 ## Tips on tmux
 
 Useful tmux shortcuts (`<prefix>` = `Ctrl-b` by default):
