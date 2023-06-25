@@ -366,8 +366,33 @@ def main():
         def launch_mpiexec(port, token):
             nonlocal mpiexec_process
             hosts = ["127.0.0.1"] + get_ip_addresses()
-            args = dict(commands=commands, hosts=hosts, port=port, token=token)
-            mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + [this_cmd, child_subcmd, serialize(args)],
+            if ':' in commands:
+                # MPMD (multiple program, multiple data) launch mode looks like:
+                # mpiexec -genv WORLD_SIZE 2
+                # -np 1 -host localhost -env RANK 0 final_cmd :   # 1st program
+                # -np 1 -host localhost -env RANK 1 final_cmd     # 2nd program
+                commands_str = ' '.join(commands)
+                new_commands = []
+                for one_program_str in commands_str.split(':'):
+                    one_program = one_program_str.split()
+                    final_cmd_index = 0
+                    for _ in range(len(one_program)):
+                        if one_program[final_cmd_index].startswith('-env'):
+                            final_cmd_index += 3
+                        elif one_program[final_cmd_index].startswith('-'):
+                            final_cmd_index += 2
+                        else:
+                            break
+                    program_part1 = one_program[:final_cmd_index]
+                    program_part2 = one_program[final_cmd_index:]
+                    args = dict(commands=program_part2, hosts=hosts, port=port, token=token)
+                    new_commands = new_commands + [':'] + program_part1 + [this_cmd, child_subcmd, serialize(args)]
+                new_commands = new_commands[1:]
+                mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + new_commands,
+                                               start_new_session=True)
+            else:
+                args = dict(commands=commands, hosts=hosts, port=port, token=token)
+                mpiexec_process = subprocess.Popen([mpiexec_cmd] + options + [this_cmd, child_subcmd, serialize(args)],
                                                start_new_session=True)
 
         child_conns = establish_connection_on_parent(launch_mpiexec)
