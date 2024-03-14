@@ -90,8 +90,23 @@ def get_mpi_size():
     exit(1)
 
 def get_ip_addresses():
-    return subprocess.run(["hostname", "--all-ip-addresses"],
-                          stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip().split()
+    try:
+        # The --all-ip-addresses option may not be available
+        return subprocess.run(["hostname", "--all-ip-addresses"],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              encoding="utf-8", check=True).stdout.strip().split()
+    except subprocess.CalledProcessError:
+        # Fallback to the `ip a` command
+        result = subprocess.run(["ip", "-br", "addr", "show"],
+                                stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip()
+        ip_addrs = []
+        for row in result.split('\n'):
+            columns = row.split()
+            if len(columns) >= 3:
+                ip_addr = columns[2].split('/')[0]
+                if ip_addr:
+                    ip_addrs.append(ip_addr)
+        return ip_addrs
 
 # Tmux
 # -----------------------------------------------------------------------------
